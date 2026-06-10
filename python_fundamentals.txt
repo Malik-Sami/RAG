@@ -1,0 +1,29 @@
+Python is a high-level, interpreted programming language known for its simple and readable syntax. It was created by Guido van Rossum and first released in 1991. Python emphasizes code readability and allows programmers to express concepts in fewer lines of code than languages like C++ or Java.
+
+Variables in Python do not need explicit type declarations. Python figures out the type automatically. For example, writing x = 10 creates an integer variable, name = "Alice" creates a string, and is_active = True creates a boolean. This is called dynamic typing.
+
+Python has several built-in data types. Integers are whole numbers like 1, 42, or -7. Floats are decimal numbers like 3.14 or -0.5. Strings are text wrapped in quotes, like "hello" or 'world'. Booleans are either True or False. Lists are ordered collections like [1, 2, 3]. Dictionaries store key-value pairs like {"name": "Alice", "age": 30}.
+
+A function in Python is defined using the def keyword. Functions help you reuse code. Here is an example: def greet(name): return "Hello, " + name. You call it by writing greet("Alice") which returns "Hello, Alice". Functions can have default parameter values, for example def greet(name="stranger") means name defaults to "stranger" if nothing is passed.
+
+Loops let you repeat code. A for loop iterates over a sequence. For example, for i in range(5) runs the loop body five times with i going from 0 to 4. A while loop runs as long as a condition is true, for example while count < 10 keeps running until count reaches 10. You can exit a loop early using break, or skip to the next iteration using continue.
+
+Conditionals let your program make decisions. The if statement checks a condition. If it is true, the indented block runs. You can add elif for additional conditions and else for a fallback. For example: if age >= 18, print "Adult", elif age >= 13, print "Teenager", else print "Child".
+
+Lists are one of the most useful data structures in Python. You can add items with append, remove items with remove, and access items by index starting at 0. For example, fruits = ["apple", "banana", "cherry"], then fruits[0] gives "apple". You can loop over a list with for fruit in fruits. List comprehensions let you build lists in one line, like squares = [x*x for x in range(10)].
+
+Dictionaries store data as key-value pairs and are very fast for lookups. You create one like person = {"name": "Alice", "age": 30}. Access a value by key: person["name"] gives "Alice". Add a new key by writing person["city"] = "Karachi". Check if a key exists using the in keyword: "age" in person returns True.
+
+Error handling in Python uses try and except blocks. Code that might fail goes inside try. If an error occurs, Python jumps to the except block instead of crashing. For example, you might wrap int(input()) in a try block to catch a ValueError if the user types letters instead of numbers. The finally block runs no matter what, useful for cleanup like closing files.
+
+Python uses indentation to define code blocks instead of curly braces. Four spaces is the standard indent. Getting indentation wrong causes an IndentationError. All lines inside a function, loop, or conditional must be indented consistently. This forces readable code by design.
+
+Importing modules lets you use code written by others. The import keyword brings in a module. For example, import math gives you math.sqrt and math.pi. You can import specific functions with from math import sqrt. Python has a huge standard library with modules for file handling, networking, dates, random numbers, and much more.
+
+String formatting in Python can be done several ways. The most modern is f-strings, written as f"Hello, {name}!". This inserts the value of name directly into the string. F-strings are fast, readable, and the recommended way to format strings in Python 3.6 and above.
+
+A class in Python is a blueprint for creating objects. You define one with the class keyword. The __init__ method runs when you create a new object and sets up its attributes. For example, class Dog with __init__(self, name) and self.name = name. Then Dog("Rex") creates a new Dog object with name set to Rex. Methods inside a class always take self as the first parameter.
+
+Python files end in .py and each file is called a module. You can run a file directly with python filename.py. The special condition if __name__ == "__main__" lets you write code that only runs when the file is executed directly, not when it is imported by another file. This is a common Python pattern for making reusable modules that also work as standalone scripts.
+
+Virtual environments let you isolate project dependencies. You create one with python -m venv .venv and activate it with source .venv/bin/activate on Mac and Linux. This keeps each project's packages separate so different projects can use different versions of the same library without conflicts. Always use a virtual environment for real projects.
