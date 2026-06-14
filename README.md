@@ -44,3 +44,9 @@ simple_rag/
 ├── python_fundamentals.txt    # The knowledge base
 └── requirements.txt
 ```
+## Update: Persistent Vector Storage
+
+- Replaced temporary in-memory embeddings with ChromaDB
+- Added persistent local vector database (`chroma_db/`)
+- Eliminated redundant re-embedding on every startup
+- Switched from manual cosine similarity to Chroma’s built-in vector search
