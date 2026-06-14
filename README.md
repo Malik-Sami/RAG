@@ -49,4 +49,4 @@ simple_rag/
 - Replaced temporary in-memory embeddings with ChromaDB
 - Added persistent local vector database (`chroma_db/`)
 - Eliminated redundant re-embedding on every startup
-- Switched from manual cosine similarity to Chroma’s built-in vector search
+- Switched from manual cos similarity to Chroma’s built-in vector search
