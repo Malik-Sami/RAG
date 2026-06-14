@@ -1,9 +1,19 @@
+import chromadb
 import ollama
 
 
-# LOAD AND CHUNK THE DOCUMENT
+# CHROMA SETUP
 
-def load_and_chunk(filepath: str, chunk_size: int = 400, overlap: int = 50) -> list[str]:
+client = chromadb.PersistentClient(path="./chroma_db")
+
+collection = client.get_or_create_collection(
+    name="python_fundamentals"
+)
+
+
+# LOAD + CHUNK DOCUMENT
+
+def load_and_chunk(filepath: str, chunk_size: int = 400, overlap: int = 50):
     """
     Read a text file and split it into overlapping chunks.
 
@@ -14,7 +24,8 @@ def load_and_chunk(filepath: str, chunk_size: int = 400, overlap: int = 50) -> l
     Why overlap? So we don't accidentally cut a sentence in half at a
     chunk boundary and lose the meaning.
     """
-    text = open(filepath, encoding="utf-8").read()
+    with open(filepath, "r", encoding="utf-8") as f:
+        text = f.read()
 
     chunks = []
     start = 0
@@ -22,85 +33,84 @@ def load_and_chunk(filepath: str, chunk_size: int = 400, overlap: int = 50) -> l
     while start < len(text):
         end = start + chunk_size
         chunk = text[start:end].strip()
+
         if chunk:
             chunks.append(chunk)
-        start += chunk_size - overlap  # step forward, keeping some overlap
+
+        start += chunk_size - overlap
 
     return chunks
 
 
-# EMBED TEXT INTO VECTORS
+# EMBEDDING FUNCTION
 
-def get_embedding(text: str) -> list[float]:
+def get_embedding(text: str):
     """
-    Convert a string into a vector (list of numbers) using Ollama.
-
-    nomic-embed-text is a model purpose-built for embeddings.
-    It turns text into 768 numbers that encode semantic meaning —
-    similar text produces similar vectors.
+    Convert text into vector embeddings using Ollama.
     """
-    response = ollama.embeddings(model="nomic-embed-text", prompt=text)
+    response = ollama.embeddings(
+        model="nomic-embed-text",
+        prompt=text
+    )
     return response["embedding"]
 
 
-def embed_chunks(chunks: list[str]) -> list[dict]:
+# STORE CHUNKS IN CHROMA
+
+def store_chunks(chunks):
     """
-    Embed every chunk and return a list of dicts with text + vector.
+    Embed and store all chunks in Chroma.
+    Runs only once unless DB is deleted.
     """
-    print(f"Embedding {len(chunks)} chunks...")
-    embedded = []
+    print(f"\nEmbedding and storing {len(chunks)} chunks...")
+
     for i, chunk in enumerate(chunks):
-        vector = get_embedding(chunk)
-        embedded.append({"text": chunk, "vector": vector})
-        print(f"  {i + 1}/{len(chunks)} done", end="\r")
-    print(f"  All {len(chunks)} chunks embedded.   ")
-    return embedded
+        embedding = get_embedding(chunk)
+
+        collection.add(
+            ids=[str(i)],
+            documents=[chunk],
+            embeddings=[embedding],
+            metadatas=[{
+                "source": "python_fundamentals.txt",
+                "chunk_number": i
+            }]
+        )
+
+        print(f"Stored {i + 1}/{len(chunks)}", end="\r")
+
+    print("\nAll chunks stored successfully.")
 
 
-# FIND MOST RELEVANT CHUNKS
+# RETRIEVE RELEVANT CHUNKS
 
-def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+def retrieve(question: str, top_k: int = 3):
     """
-    Measure how similar two vectors are (range: -1 to 1, higher = more similar).
-
-    We implement this manually so you can see exactly what's happening.
-    This is what a vector database does internally at massive scale.
+    Search Chroma for the most relevant chunks.
     """
-    dot_product = sum(a * b for a, b in zip(vec_a, vec_b))
-    magnitude_a = sum(a * a for a in vec_a) ** 0.5
-    magnitude_b = sum(b * b for b in vec_b) ** 0.5
+    question_embedding = get_embedding(question)
 
-    if magnitude_a == 0 or magnitude_b == 0:
-        return 0.0
+    results = collection.query(
+        query_embeddings=[question_embedding],
+        n_results=top_k
+    )
 
-    return dot_product / (magnitude_a * magnitude_b)
-
-
-def retrieve(question: str, embedded_chunks: list[dict], top_k: int = 3) -> list[str]:
-    """
-    Embed the question and find the top_k most similar chunks.
-
-    This is the core of RAG: instead of searching by keywords,
-    we search by *meaning*.
-    """
-    question_vector = get_embedding(question)
-
-    # Score every chunk against the question
-    scored = []
-    for chunk in embedded_chunks:
-        score = cosine_similarity(question_vector, chunk["vector"])
-        scored.append((score, chunk["text"]))
-
-    # Sort by score descending, take the top_k
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top_chunks = [text for _, text in scored[:top_k]]
-
-    return top_chunks
+    return results["documents"][0]
 
 
-# ASK THE LLM WITH CONTEXT
+# ASK LLM
 
-def ask(question: str, context_chunks: list[str]) -> str:
+def is_small_talk(question):
+    small_talk = [
+        "hi", "hello", "hey",
+        "how are you",
+        "what's up",
+        "who are you"
+    ]
+
+    return question.lower() in small_talk
+
+def ask(question: str, context_chunks):
     """
     Build a RAG prompt and send it to gemma3 via Ollama.
 
@@ -108,45 +118,65 @@ def ask(question: str, context_chunks: list[str]) -> str:
     This prevents hallucination — if the answer isn't in our document,
     the model should say so rather than making something up.
     """
-    # Join the retrieved chunks into one context block
     context = "\n\n---\n\n".join(context_chunks)
 
-    prompt = f"""You are a helpful assistant. Answer the question using ONLY the context below.
-    If the answer is not in the context, say "I don't have that information in my knowledge base."
+    prompt = f"""
+You are a helpful assistant.
 
-    Context:
-    {context}
+Answer ONLY using the context below.
+If the answer is not in the context, say:
+"I don't have that information in my knowledge base."
 
-    Question: {question}
+Context:
+{context}
 
-    Answer:"""
+Question:
+{question}
+
+Answer:
+"""
 
     response = ollama.chat(
         model="gemma3:4b",
-        messages=[{"role": "user", "content": prompt}],
-        options={"temperature": 0.1},  # low = more correct, less creative
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        options={
+            "temperature": 0.1
+        }
     )
 
     return response["message"]["content"]
 
 
+# MAIN PROGRAM
+
 def main():
     print("=" * 50)
-    print("  Simple RAG Chatbot")
-    print("  Knowledge base: python_fundamentals.txt")
+    print("      Simple RAG Chatbot (Chroma + Ollama)")
     print("=" * 50)
 
-    # Load and chunk the document
-    print("\n[1/2] Loading document...")
-    chunks = load_and_chunk("python_fundamentals.txt", chunk_size=400, overlap=50)
-    print(f"  Split into {len(chunks)} chunks")
+    # Only embed if DB is empty
+    if collection.count() == 0:
+        print("\nNo existing knowledge base found.")
 
-    # Embed all chunks (only done once at startup)
-    print("\n[2/2] Embedding chunks (one-time setup)...")
-    embedded_chunks = embed_chunks(chunks)
+        chunks = load_and_chunk(
+            "python_fundamentals.txt",
+            chunk_size=400,
+            overlap=50
+        )
 
-    # Chat loop
-    print("\nReady! Ask anything about Python fundamentals.")
+        print(f"Loaded {len(chunks)} chunks.")
+        store_chunks(chunks)
+
+    else:
+        print("\nKnowledge base already exists.")
+        print(f"Loaded {collection.count()} stored chunks.")
+
+    print("\nReady! Ask anything.")
     print("Type 'quit' to exit.\n")
 
     while True:
@@ -154,15 +184,28 @@ def main():
 
         if not question:
             continue
-        if question.lower() in ("quit", "exit", "q"):
-            print("Bye!")
+
+        if question.lower() in ["quit", "exit", "q"]:
+            print("Goodbye!")
             break
 
-        # Retrieve relevant context
-        top_chunks = retrieve(question, embedded_chunks, top_k=3)
+        if is_small_talk(question):
+            response = ollama.chat(
+                model="gemma3:4b",
+                messages=[
+                    {"role": "user", "content": question}
+                ]
+            )
+
+            print("\nAssistant:", response["message"]["content"])
+            print()
+            continue
+
+        # Retrieve context
+        top_chunks = retrieve(question)
 
         # Generate answer
-        print("\nAssistant: ", end="", flush=True)
+        print("\nAssistant:", end=" ", flush=True)
         answer = ask(question, top_chunks)
         print(answer)
         print()
