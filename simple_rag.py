@@ -10,7 +10,6 @@ collection = client.get_or_create_collection(
     name="python_fundamentals"
 )
 
-
 # LOAD + CHUNK DOCUMENT
 
 def load_and_chunk(filepath: str, chunk_size: int = 400, overlap: int = 50):
@@ -84,11 +83,18 @@ def store_chunks(chunks):
 
 # RETRIEVE RELEVANT CHUNKS
 
-def retrieve(question: str, top_k: int = 3):
+def retrieve(question: str, chat_history, top_k: int = 5):
     """
-    Search Chroma for the most relevant chunks.
+    Retrieve using current question + recent conversation context.
     """
-    question_embedding = get_embedding(question)
+
+    recent_history = " ".join(
+        [msg["content"] for msg in chat_history[-4:]]
+    )
+
+    search_query = f"{recent_history} {question}"
+
+    question_embedding = get_embedding(search_query)
 
     results = collection.query(
         query_embeddings=[question_embedding],
@@ -110,7 +116,19 @@ def is_small_talk(question):
 
     return question.lower() in small_talk
 
-def ask(question: str, context_chunks):
+def is_followup(question):
+    followups = [
+        "tell me more",
+        "explain more",
+        "continue",
+        "go on",
+        "elaborate",
+        "what else"
+    ]
+
+    return question.lower() in followups
+
+def ask(question: str, context_chunks, chat_history):
     """
     Build a RAG prompt and send it to gemma3 via Ollama.
 
@@ -120,21 +138,38 @@ def ask(question: str, context_chunks):
     """
     context = "\n\n---\n\n".join(context_chunks)
 
-    prompt = f"""
-You are a helpful assistant.
+    history_text = "\n".join(
+    [f"{msg['role']}: {msg['content']}" for msg in chat_history]
+    )
 
-Answer ONLY using the context below.
-If the answer is not in the context, say:
-"I don't have that information in my knowledge base."
+    prompt = f"""You are a Python Fundamentals Tutor.
 
-Context:
-{context}
+                Your job is to teach Python clearly using the provided knowledge base.
 
-Question:
-{question}
+                Rules:
+                1. Answer using the provided context ONLY.
+                2. Use conversation history to understand follow-up questions.
+                3. If the user asks "tell me more", "explain further", or similar,
+                continue expanding the previous topic instead of repeating yourself.
+                4. Keep explanations beginner-friendly.
+                5. If the answer does not exist in the context, say:
+                "I don't have that information in my knowledge base."
+                6. If the user asks "tell me more" or "explain further":
+                    - DO NOT repeat the previous answer.
+                    - Expand with NEW details, examples, deeper explanation, or related concepts.
+                7. Avoid repeating wording from the previous answer.
 
-Answer:
-"""
+                Conversation History:
+                {history_text}
+
+                Knowledge Base Context:
+                {context}
+
+                User Question:
+                {question}
+
+                Answer:
+                """
 
     response = ollama.chat(
         model="gemma3:4b",
@@ -148,6 +183,7 @@ Answer:
             "temperature": 0.1
         }
     )
+    
 
     return response["message"]["content"]
 
@@ -156,7 +192,7 @@ Answer:
 
 def main():
     print("=" * 50)
-    print("      Simple RAG Chatbot (Chroma + Ollama)")
+    print("      Simple RAG Chatbot")
     print("=" * 50)
 
     # Only embed if DB is empty
@@ -178,6 +214,7 @@ def main():
 
     print("\nReady! Ask anything.")
     print("Type 'quit' to exit.\n")
+    chat_history = []
 
     while True:
         question = input("You: ").strip()
@@ -190,25 +227,23 @@ def main():
             break
 
         if is_small_talk(question):
-            response = ollama.chat(
-                model="gemma3:4b",
-                messages=[
-                    {"role": "user", "content": question}
-                ]
-            )
-
-            print("\nAssistant:", response["message"]["content"])
-            print()
+            print("\nAssistant: Hello 👋 I can help you learn Python fundamentals.")
+            print("Ask me about variables, loops, functions, OOP, errors, or anything Python-related.\n")
             continue
 
+        if is_followup(question) and chat_history:
+            question = chat_history[-2]["content"] + " " + question
+
         # Retrieve context
-        top_chunks = retrieve(question)
+        top_chunks = retrieve(question, chat_history, top_k=5)
 
         # Generate answer
-        print("\nAssistant:", end=" ", flush=True)
-        answer = ask(question, top_chunks)
-        print(answer)
-        print()
+        print("\nAssistant is thinking...", flush=True)
+        answer = ask(question, top_chunks, chat_history)
+        print(f"\nAssistant: {answer}")
+        chat_history.append({"role": "user", "content": question})
+        chat_history.append({"role": "assistant", "content": answer})
+        
 
 
 if __name__ == "__main__":
